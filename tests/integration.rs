@@ -45,6 +45,9 @@ mod page_setup_root_repair;
 #[path = "parametric_constraints_solve.rs"]
 mod parametric_constraints_solve;
 
+#[path = "part_feature_tree.rs"]
+mod part_feature_tree;
+
 #[path = "pdf_export_images_check.rs"]
 mod pdf_export_images_check;
 

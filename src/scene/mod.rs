@@ -58,6 +58,7 @@ pub mod viewport_dimension_pick;
 pub mod viewport_ref;
 pub(crate) use selection::{pe_url_description_of, pe_url_of};
 pub mod parametric_constraints;
+pub mod part;
 mod parametric_solve;
 
 pub(crate) use boundary::{
@@ -2314,6 +2315,15 @@ pub struct Scene {
     pub block_meshes: HashMap<Handle, MeshLodSet>,
     /// Kernel B-reps used by solid operations and exact-geometry saves.
     pub solid_models: HashMap<Handle, kernel::brep::Body>,
+    /// Per-feature results of the part's last regeneration, keyed by input
+    /// hash (see `part::regen`). Derived; never saved.
+    pub(crate) part_cache: part::RegenCache,
+    /// Set while the part rebuilds from the change pipeline, so the body it
+    /// writes does not trigger a second rebuild.
+    pub(crate) part_refresh_active: bool,
+    /// What the change pipeline's last part rebuild found, for the edit
+    /// that caused it to report.
+    pub(crate) part_last_report: Option<part::RegenReport>,
     /// GPU render data for raster images (RasterImage entities), keyed by handle.
     pub images: HashMap<Handle, ImageModel>,
     /// The viewport that is currently "entered" (MSPACE mode).
@@ -2757,6 +2767,9 @@ impl Scene {
             material_base_dir: None,
             block_meshes: HashMap::default(),
             solid_models: HashMap::default(),
+            part_cache: part::RegenCache::default(),
+            part_refresh_active: false,
+            part_last_report: None,
             images: HashMap::default(),
             active_viewport: None,
             bg_color: [33.0 / 255.0, 40.0 / 255.0, 48.0 / 255.0, 1.0],
@@ -3749,6 +3762,15 @@ impl Scene {
                     if !changes.iter().any(|(handle, _)| *handle == change.0) {
                         changes.push(change);
                     }
+                }
+            }
+        }
+        // Part features rebuild after the sketch solve has settled the
+        // curves they read.
+        if !appearance_only {
+            for change in self.refresh_part_features(&changes) {
+                if !changes.iter().any(|(handle, _)| *handle == change.0) {
+                    changes.push(change);
                 }
             }
         }

@@ -42,6 +42,8 @@ mod tolerance_dialog;
 mod update;
 mod view;
 #[cfg(test)]
+mod part_workflow_tests;
+#[cfg(test)]
 mod viewport_dimension_tests;
 mod visibility;
 

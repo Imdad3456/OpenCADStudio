@@ -119,6 +119,9 @@ pub(super) struct SketchSession {
     pub(super) previous_snap_enabled: bool,
     /// Entity handles already present when the sketch opened.
     pub(super) opened_with: std::collections::HashSet<codec::Handle>,
+    /// The origin plane the sketch was opened on, if it was one. A sketch on
+    /// an origin plane joins the drawing's part when it finishes.
+    pub(super) datum: Option<crate::scene::part::DatumPlane>,
 }
 
 // ── Per-document tab state ─────────────────────────────────────────────────

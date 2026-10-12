@@ -16,6 +16,7 @@ mod fileops;
 mod inquiry;
 mod layerprops;
 mod layers;
+pub(crate) mod part;
 mod pc_colormap;
 mod pc_extract;
 mod pdf_dialogs;
@@ -323,6 +324,9 @@ impl OpenCADStudio {
             return Some(t);
         }
         if let Some(t) = self.dispatch_count(cmd, i) {
+            return Some(t);
+        }
+        if let Some(t) = self.dispatch_part(cmd, i) {
             return Some(t);
         }
         if let Some(t) = self.dispatch_draw(cmd, i) {

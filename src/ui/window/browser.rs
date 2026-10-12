@@ -1,19 +1,23 @@
 //! The Browser: a standing outline of what the drawing is built from.
 //!
-//! Three sections, each read straight from the document rather than from a
+//! Sections, each read straight from the document rather than from a
 //! parallel model the panel would have to keep in sync:
 //!
+//! * **Part** — the drawing's parametric feature tree, when it has one
+//!   (NEWPART): origin planes, sketches and features in tree order, each
+//!   with its regeneration status. These features *are* re-run: editing a
+//!   sketch dimension or a feature parameter rebuilds what depends on it
+//!   (see `scene::part`). Clicking a feature selects what it made and shows
+//!   how to edit it.
 //! * **Origin planes** — the three world planes, as somewhere to start a
-//!   sketch when the drawing is still empty and there is no face to pick.
+//!   sketch when the drawing has no part and there is no face to pick.
 //! * **Sketch** — the open sketch, if there is one.
 //! * **Bodies** — every `Solid3D`, labelled with the operation that made it,
 //!   recovered from the DWG solid history.
 //!
-//! What this panel deliberately is *not* is a parametric feature tree. The
-//! history records how each solid was built, but nothing re-runs it, so
-//! editing an earlier feature cannot rebuild the ones after it. Showing the
-//! list as if it were editable history would promise exactly that. It is a
-//! table of contents, and it is labelled as one.
+//! The Bodies list is still only a table of contents: the DWG solid history
+//! it reads records how each solid was built, but nothing re-runs it. The
+//! Part section is the parametric tree.
 
 use crate::app::Message;
 use crate::ui::dock::PanelId;
@@ -96,6 +100,36 @@ fn note_row(label: String) -> Element<'static, Message> {
     .into()
 }
 
+/// One feature of the part: an origin plane opens a sketch on it, anything
+/// else selects what it made. Status follows the name.
+fn feature_row(
+    part: &crate::scene::part::PartDocument,
+    feature: &crate::scene::part::Feature,
+) -> Element<'static, Message> {
+    use crate::scene::part::{FeatureKind, FeatureStatus};
+    let marker = match &feature.status {
+        FeatureStatus::Ok | FeatureStatus::NotBuilt => String::new(),
+        FeatureStatus::Suppressed | FeatureStatus::SuppressedByParent(_) => {
+            format!("  ({})", crate::t!("suppressed"))
+        }
+        FeatureStatus::Error(_) => format!("  ⚠ {}", crate::t!("error")),
+        FeatureStatus::DependencyFailed(id) => format!(
+            "  ⚠ {}",
+            part.feature(*id).map_or_else(|| id.to_string(), |f| f.name.clone())
+        ),
+    };
+    match &feature.kind {
+        FeatureKind::DatumPlane { plane } => entry_row(
+            format!("{} ({})", feature.name, plane.axes_name()),
+            format!("CREATESKETCH {}", plane.axes_name()),
+        ),
+        _ => entry_row(
+            format!("  {}{marker}", feature.name),
+            format!("PARTSELECT #{}", feature.id.0),
+        ),
+    }
+}
+
 pub fn view<'a>(
     document: &'a CadDocument,
     open_sketch: Option<&'a str>,
@@ -107,12 +141,30 @@ pub fn view<'a>(
 
     let mut tree = column![].spacing(1);
 
-    tree = tree.push(section_header(crate::t!("Origin planes").into_owned()));
-    for (label, argument) in ORIGIN_PLANES {
-        tree = tree.push(entry_row(
-            label.to_string(),
-            format!("CREATESKETCH {argument}"),
-        ));
+    match crate::scene::part::store::load(document) {
+        Ok(Some(part)) => {
+            tree = tree.push(section_header(part.name.clone()));
+            for feature in &part.features {
+                tree = tree.push(feature_row(&part, feature));
+            }
+        }
+        Ok(None) => {
+            tree = tree.push(section_header(crate::t!("Origin planes").into_owned()));
+            for (label, argument) in ORIGIN_PLANES {
+                tree = tree.push(entry_row(
+                    label.to_string(),
+                    format!("CREATESKETCH {argument}"),
+                ));
+            }
+            tree = tree.push(entry_row(
+                crate::t!("New part").into_owned(),
+                "NEWPART".to_string(),
+            ));
+        }
+        Err(error) => {
+            tree = tree.push(section_header(crate::t!("Part").into_owned()));
+            tree = tree.push(note_row(error.to_string()));
+        }
     }
 
     tree = tree.push(section_header(crate::t!("Sketch").into_owned()));

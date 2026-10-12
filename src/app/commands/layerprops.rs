@@ -693,7 +693,7 @@ impl OpenCADStudio {
                     );
                     return Some(Task::none());
                 }
-                self.open_sketch(i);
+                self.open_sketch(i, crate::scene::part::DatumPlane::parse(&arg));
             }
             // BROWSER — toggle the docked outline of planes, sketch and bodies.
             "BROWSER" => {
@@ -1703,7 +1703,7 @@ impl OpenCADStudio {
     /// edge-on is the main way geometry ends up somewhere the user did not
     /// mean, because a few pixels of cursor travel cover a long way in
     /// world space.
-    fn open_sketch(&mut self, i: usize) {
+    fn open_sketch(&mut self, i: usize, datum: Option<crate::scene::part::DatumPlane>) {
         let opened_with: std::collections::HashSet<codec::Handle> = self.tabs[i]
             .scene
             .document
@@ -1717,6 +1717,7 @@ impl OpenCADStudio {
             previous_ucs: self.tabs[i].active_ucs.clone(),
             previous_snap_enabled: self.snapper.snap_enabled,
             opened_with,
+            datum,
         });
         let rotation = self.tabs[i].scene.viewcube_ucs_mat();
         self.plan_snap(i, rotation);
@@ -1752,7 +1753,7 @@ impl OpenCADStudio {
                 .push_output(crate::tf!("{} closed; nothing was drawn.", session.name).as_ref());
         } else {
             let count = created.len();
-            self.tabs[i].prev_selection = created;
+            self.tabs[i].prev_selection = created.clone();
             self.command_line.push_output(
                 crate::tf!(
                     "{} closed with {} object(s). EXTRUDE then Previous uses them.",
@@ -1761,6 +1762,32 @@ impl OpenCADStudio {
                 )
                 .as_ref(),
             );
+            // In a drawing with a part, a sketch on an origin plane becomes
+            // a sketch feature that later features can build from.
+            let has_part = matches!(self.tabs[i].scene.part(), Ok(Some(_)));
+            if let (true, Some(datum)) = (has_part, session.datum) {
+                let pending = self.begin_undo(i, "FINISHSKETCH", created.len(), true);
+                match self.tabs[i].scene.part_add_sketch(datum, &created) {
+                    Ok(id) => {
+                        let name = self.tabs[i]
+                            .scene
+                            .part()
+                            .ok()
+                            .flatten()
+                            .and_then(|part| part.feature(id).map(|f| f.name.clone()))
+                            .unwrap_or_default();
+                        self.tabs[i].dirty = true;
+                        self.command_line.push_output(&format!(
+                            "{name} added to the part on the {}. PARTEXTRUDE {name} <depth> extrudes it.",
+                            datum.label()
+                        ));
+                    }
+                    Err(error) => self.command_line.push_error(&error.to_string()),
+                }
+                if let Some(pending) = pending {
+                    self.commit_undo_delta(i, pending);
+                }
+            }
         }
     }
 
