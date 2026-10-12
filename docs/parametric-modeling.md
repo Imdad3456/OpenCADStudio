@@ -127,3 +127,22 @@ Tests:
 cargo test --test integration part_feature_tree   # 13 scene-level tests
 cargo test --lib part_workflow                     # 3 whole-editor workflow tests
 ```
+
+## 7. Verification record (milestone 1 delivery)
+
+| Check | Result |
+|---|---|
+| `cargo test --lib` | 2128 passed, 0 failed, 24 ignored (includes 3 new editor workflow tests) |
+| `cargo test --test integration` | 141 passed, 0 failed (includes 13 new part tests) |
+| `cargo build --bin OpenCADStudio` (Linux x86_64) | builds |
+| `cargo check --lib --target wasm32-unknown-unknown` | passes, no warnings from the new code |
+| Live GUI over MCP (`--mcp` → running editor under Xvfb) | NEWPART / PARTRECT / PARTEXTRUDE / PARTEDIT / save_verified / open / undo / redo all completed; measured volumes 120000 → 180000 → 270000 → undo 180000 → redo 270000 |
+| `--serve` headless JSON server on the built binary | full workflow including DWG save and reopen completes |
+
+Not verified here: anything visual (the container has no GPU; the editor ran with "No GPU renderer", so the viewport and Browser panel were not seen), the web build in a browser (`trunk build` was not run, only the wasm type-check), Windows and macOS builds.
+
+Upstream quirk seen while testing (not caused by this change): the MCP `measure` op reports zero bounds for any Solid3D after its drawing is reopened (a plain BOX does the same); volumes are right. The kernel-side `PARTTREE` measure is unaffected.
+
+## 8. Recommended next milestone
+
+Sketch-on-face plus Revolve and Fillet, because together they force the one hard piece the tree still lacks: **persistent face/edge naming** (section 4). Order: (1) generator-based face names on extrude output and through booleans, (2) `PlaneRef::Face` so a sketch can sit on a face and survive upstream edits, (3) Revolve, (4) Fillet/Chamfer on named edges, (5) feature delete/reorder/rename with dependency checks, (6) an interactive feature-edit dialog in the Browser instead of PARTEDIT. Assemblies come after naming, since mates reference the same faces.
